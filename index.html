@@ -488,7 +488,7 @@ input[type=color],input[type=range]{accent-color:#a66be0}
   <h2>👤 Conta</h2>
   <div id="accBody"></div>
   <div class="err" id="accStatus" role="status"></div>
-  <div class="note">Entre com email e senha ou crie uma conta com apelido. O email fica privado; o apelido e o recorde aparecem no ranking.</div>
+  <div class="note">Entre ou crie uma conta usando apelido e senha. O Firebase protege a senha; o apelido e o recorde aparecem no ranking.</div>
   <button class="btn" data-back>Voltar</button>
 </div></div>
 
@@ -539,15 +539,20 @@ let accountProfileWriteInProgress=false;
 function validNickname(name){
   return typeof name==='string'&&/^[A-Za-z0-9_]{3,16}$/.test(name);
 }
+function nicknameAuthEmail(name){
+  return name.trim().toLowerCase()+'@run-surf.invalid';
+}
 function firebaseErrorMessage(error){
   const code=error&&typeof error.code==='string'?error.code:'';
   const known={
-    'auth/email-already-in-use':'Este email já tem conta. Use Entrar.',
-    'auth/invalid-email':'Digite um email válido.',
+    'auth/email-already-in-use':'Este apelido já tem conta. Use Entrar.',
+    'auth/invalid-email':'Não foi possível gerar a conta para este apelido.',
     'auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.',
-    'auth/invalid-credential':'Email ou senha incorretos.',
+    'auth/invalid-credential':'Apelido ou senha incorretos.',
+    'auth/user-not-found':'Apelido ou senha incorretos.',
+    'auth/wrong-password':'Apelido ou senha incorretos.',
     'auth/user-disabled':'Esta conta foi desativada.',
-    'auth/operation-not-allowed':'Ative Email/senha no Console do Firebase.',
+    'auth/operation-not-allowed':'Ative Email/senha em Authentication → Sign-in method no Firebase.',
     'auth/unauthorized-domain':'Adicione 127.0.0.1 aos domínios autorizados do Firebase Authentication.',
     'auth/network-request-failed':'Sem conexão com o Firebase. Verifique a internet.',
     'permission-denied':'O Firestore bloqueou a operação. Confira as regras publicadas.',
@@ -609,10 +614,11 @@ function firebaseServices(){
   return firebaseServicesPromise;
 }
 const API={
-  async create(name,email,password){
+  async create(name,password){
     const {auth,db,authSdk,dbSdk}=await firebaseServices();
     accountProfileWriteInProgress=true;
     try{
+      const email=nicknameAuthEmail(name);
       const credential=await authSdk.createUserWithEmailAndPassword(auth,email,password);
       await authSdk.updateProfile(credential.user,{displayName:name});
       await dbSdk.setDoc(dbSdk.doc(db,'profiles',credential.user.uid),{
@@ -621,10 +627,11 @@ const API={
       return {name,uid:credential.user.uid};
     }finally{accountProfileWriteInProgress=false}
   },
-  async login(email,password){
+  async login(name,password){
     const {auth,db,authSdk,dbSdk}=await firebaseServices();
     accountProfileWriteInProgress=true;
     try{
+      const email=nicknameAuthEmail(name);
       const credential=await authSdk.signInWithEmailAndPassword(auth,email,password);
       const profileRef=dbSdk.doc(db,'profiles',credential.user.uid);
       const profile=await dbSdk.getDoc(profileRef);
@@ -1722,16 +1729,12 @@ function renderAcc(){
       }catch(error){setAccountStatus(firebaseErrorMessage(error))}
     };
   }else{
-    b.innerHTML='<input id="accName" maxlength="16" placeholder="Apelido (ao criar conta)" autocomplete="nickname"><input id="accEmail" type="email" placeholder="Email" autocomplete="email"><input id="accPassword" type="password" placeholder="Senha (mínimo 6 caracteres)" autocomplete="current-password"><div class="row"><button class="btn" id="bLogin">Entrar</button><button class="btn primary" id="bCreateAccount">Criar conta</button></div>';
+    b.innerHTML='<input id="accName" maxlength="16" placeholder="Apelido" autocomplete="username"><input id="accPassword" type="password" placeholder="Senha (mínimo 6 caracteres)" autocomplete="current-password"><div class="row"><button class="btn" id="bLogin">Entrar</button><button class="btn primary" id="bCreateAccount">Criar conta</button></div>';
     const accountAction=async create=>{
       const name=$('#accName').value.trim();
-      const email=$('#accEmail').value.trim();
       const password=$('#accPassword').value;
-      if(create&&!validNickname(name)){
+      if(!validNickname(name)){
         setAccountStatus('Use no apelido de 3 a 16 letras, números ou _.');return;
-      }
-      if(!email||!$('#accEmail').checkValidity()){
-        setAccountStatus('Digite um email válido.');return;
       }
       if(!password||(create&&password.length<6)){
         setAccountStatus(create?'A senha precisa ter pelo menos 6 caracteres.':'Digite sua senha.');return;
@@ -1739,7 +1742,7 @@ function renderAcc(){
       const loginButton=$('#bLogin'),createButton=$('#bCreateAccount');
       loginButton.disabled=true;createButton.disabled=true;setAccountStatus('Conectando...');
       try{
-        const account=create?await API.create(name,email,password):await API.login(email,password);
+        const account=create?await API.create(name,password):await API.login(name,password);
         W.user=account.name;W.userId=account.uid;saveW();
         if(S.lastSecs>0&&S.back==='pOver')await API.submit(S.lastSecs);
         setAccountStatus('Conta conectada.');
